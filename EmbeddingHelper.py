@@ -11,48 +11,69 @@ from matplotlib import pyplot as plt
 
 
 class EmbeddingHelper():
-    def __init__(self):
+    def __init__(self, encoder, data_generator, embeddings_dir):
+        self.encoder = encoder
+        self.data_generator = data_generator
+        self.embeddings_dir = embeddings_dir
+        self.metadata_filename = None
+        self.sprite_filename = None
+        self.embeddings = None
+        self.data_array = None
+        self.labels = None
+        self.sprite_shape = None
+        self._generate_embeddings()  # initialize the embeddings, data, and labels
+        self._create_metadata()
         return
 
-    def preprocess_data(self, data_array: Union[np.ndarray, Sequence[np.ndarray]]) -> Union[np.ndarray, Sequence[np.ndarray]]:
-        data_array = 1 - data_array
-        return data_array
-
-    def generate_embeddings(self, data_generator, encoder, embeddings_dir):
+    def _generate_embeddings(self) -> None:
         embeddings_list = []
         data_array = None
         label_list = []
         counter = 0
-        for train_data, label in data_generator:
+        for train_data, label in self.data_generator:
             if data_array is None:
                 data_array = train_data.numpy()
             else:
                 data_array = np.append(data_array, train_data.numpy(), axis=0)
-            # in this case, the label is simply the index of the data. This can be adapted for different data later on
-            embeddings = encoder.predict(train_data)  # [0]
+            embeddings = self.encoder.predict(train_data)
             for i, embedding in enumerate(embeddings):
                 embeddings_list.append(embedding)
                 label_list.append(label[i])
                 counter += 1
-        return np.array(embeddings_list), data_array, label_list
+        self.embeddings = np.array(embeddings_list)
+        self.data_array = data_array
+        self.labels = label_list
 
-    def create_metadata(self, label_list: Union[np.ndarray, Sequence[np.ndarray]], embeddings_dir: str,
-                        filename="metadata.tsv") -> None:
-        metadata_filename = os.path.join(embeddings_dir, filename)
+    def _create_metadata(self, filename="metadata.tsv") -> None:
+        self.metadata_filename = filename
+        metadata_filename = os.path.join(self.embeddings_dir, self.metadata_filename)
         with open(metadata_filename, 'w') as f:
             f.write("Index\tLabel\n")
-            for index, label in enumerate(label_list):
+            for index, label in enumerate(self.labels):
                 f.write(f"{index}\t{label}\n")
         return
 
-    def create_sprite(self, data_array: np.ndarray, embeddings_dir: str,
-                      filename="sprites.png") -> None:
-        n_data = data_array.shape[0]
-        height = data_array.shape[1]
-        width = data_array.shape[2]
-        channel = data_array.shape[-1]
+    def _preprocess_data(self) -> Union[np.ndarray, Sequence[np.ndarray]]:
+        """
+        Function for preprocessing image data.
+        For now, it normalizes the image, and reverses black and white
+        Feel free to change this function for your own use
+        :return: Processed image
+        """
+        # normalizing the image into 0-1
+        copy = self.data_array / np.max(self.data_array)
+        # reversing black and white to have white background and black content
+        copy = 1 - copy
+        return copy
+
+    def create_sprite(self, filename="sprites.png") -> None:
+        self.sprite_filename = filename
+        n_data = self.data_array.shape[0]
+        height = self.data_array.shape[1]
+        width = self.data_array.shape[2]
+        channel = self.data_array.shape[-1]
         n_plots = int(np.ceil(np.sqrt(n_data)))
-        data_list_processed = self.preprocess_data(data_array=data_array)
+        data_list_processed = self._preprocess_data()
         sprite_canvas = np.ones(((height * n_plots), (width * n_plots), channel))
         for row in range(n_plots):
             for col in range(n_plots):
@@ -62,52 +83,50 @@ class EmbeddingHelper():
                     sprite_canvas[row * height:(row + 1) * height, col * width:(col + 1) * width, ...] = img
         alpha_channel = np.zeros_like(sprite_canvas)[..., [0]]
         alpha_channel[np.nonzero(sprite_canvas < 1)] = 1
-        sprites_filename = os.path.join(embeddings_dir, filename)
-        if channel == 0:
+        sprites_filename = os.path.join(self.embeddings_dir, self.sprite_filename)
+        if channel == 0 or channel == 1:  # if it is grayscale, stack the images on top of each other
             sprite_png = np.concatenate([sprite_canvas, sprite_canvas, sprite_canvas, alpha_channel], axis=-1)
             sprite_png = (sprite_png * 255).astype(np.uint8)
-        else:
+        elif channel == 3:  # if it is RGB
             sprite_png = np.concatenate([sprite_canvas, alpha_channel], axis=-1)
+        else:
+            raise ValueError("Invalid image channel size. It must be none, 1 or 3")
         Image.fromarray(sprite_png).save(sprites_filename, "PNG")
+        self.sprite_shape = (height, width, 4)
         return
 
-    def embedding_to_tensorboard(self, embeddings: Union[np.ndarray, Sequence[np.ndarray]], embeddings_dir: str,
-                       checkpoint_filename="my-model.ckpt", metadata_filename="metadata.tsv",
-                       sprite_filename="sprites.png",
-                       embedding_name="z_tf") -> None:
+    def to_tensorboard(self, checkpoint_filename="my-model.ckpt", embedding_name="z_tf") -> None:
         tf1.reset_default_graph()
-
-        # you initialize a tf variable with embeddings as its initial values
-        # initializer = tf.constant_initializer(embeddings)
-        # z = tf1.get_variable(embedding_name, shape=embeddings.shape, initializer=initializer)
-        z = tf.Variable(embeddings, name=embedding_name)
+        z = tf.Variable(self.embeddings, name=embedding_name)
         saver = tf.compat.v1.train.Saver(var_list=[z])
-        ckpt_filename = os.path.join(embeddings_dir, checkpoint_filename)
+        ckpt_filename = os.path.join(self.embeddings_dir, checkpoint_filename)
 
         projector_config = ProjectorConfig()
-        projector_config.model_checkpoint_path = embeddings_dir
+        projector_config.model_checkpoint_path = ckpt_filename
         embeddings = projector_config.embeddings.add()
 
         embeddings.tensor_name = embedding_name
 
-        metadata_filename = os.path.join(embeddings_dir, metadata_filename)
-        embeddings.metadata_path = metadata_filename
+        # metadata_filename = os.path.join(self.embeddings_dir, self.metadata_filename)
+        embeddings.metadata_path = self.metadata_filename
 
-        embeddings.sprite.image_path = os.path.join(embeddings_dir, sprite_filename)
-        embeddings.sprite.image_path = sprite_filename
-        embeddings.sprite.single_image_dim.extend([28, 28,4])
+        # only add sprite if the the sprite is created in the first place
+        if self.sprite_filename is not None:
+            embeddings.sprite.image_path = os.path.join(self.embeddings_dir, self.sprite_filename)
+            embeddings.sprite.image_path = self.sprite_filename
+            embeddings.sprite.single_image_dim.extend(self.sprite_shape)
 
-        visualize_embeddings(logdir=embeddings_dir, config=projector_config)
+        visualize_embeddings(logdir=self.embeddings_dir, config=projector_config)
         saver.save(sess=None, global_step=None, save_path=ckpt_filename)
 
-    def sklearn_tsne_plot(self, embedding_array, label_list, embeddings_dir, filename="tsne.png"):
-        filename_abs = os.path.join(embeddings_dir, filename)
-        X_embedded = tsne(n_components=2).fit_transform(embedding_array)
+    def tsne_plot(self, labels, colors, filename="tsne.png", show=False) -> None:
+        if len(labels) != len(colors):
+            raise ValueError("The list of labels and colours should be the same!")
+        filename_abs = os.path.join(self.embeddings_dir, filename)
+        X_embedded = tsne(n_components=2).fit_transform(self.embeddings)
         plt.figure(figsize=(6, 5))
-        target_ids = ['PEN', 'FLEX', 'SCAP', 'ABD', 'IR', 'ER', 'DIAG', 'ROW', 'SLR']
-        colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k', 'purple', 'orange']
 
-        for i, label in enumerate(label_list):
+        for i, label in enumerate(self.labels):
             label = label.numpy()
             plt.scatter(X_embedded[i, 0], X_embedded[i, 1], c=colors[label], label=int(label))
         lines = []
@@ -116,6 +135,7 @@ class EmbeddingHelper():
             line = Line2D(range(1), range(1), color="white", marker='o', markerfacecolor=color)
             lines.append(line)
 
-        plt.legend(lines, target_ids, numpoints=1, loc=1)
+        plt.legend(lines, labels, numpoints=1, loc=1)
         plt.savefig(fname=filename_abs, format='png')
-        plt.show()
+        if show:
+            plt.show()

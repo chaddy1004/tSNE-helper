@@ -1,0 +1,7 @@
+embeddings/checkpoint
+embeddings/metadata.tsv
+embeddings/my-model.ckpt.data-00000-of-00001
+embeddings/my-model.ckpt.index
+embeddings/projector_config.pbtxt
+embeddings/sprites.png
+embeddings/tsne.png
