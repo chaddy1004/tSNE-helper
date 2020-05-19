@@ -65,5 +65,5 @@ This example use Variational AutoEncoder created for MNIST dataset.
 	title="Tensorboard" width="500" height="500"/>
 As seen, the points have corresponding sprites as the markers (this can be turned off in Tensorboard).
 #### tSNE plot
-<img src="images/tnse.png" alt="tsne"
-	title="Tsne" width="500" height="500"/>
+<img src="images/tsne.png" alt="tsne"
+	title="tsne" width="500" height="500"/>
