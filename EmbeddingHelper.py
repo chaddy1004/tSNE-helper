@@ -21,8 +21,10 @@ class EmbeddingHelper():
         self.data_array = None
         self.labels = None
         self.sprite_shape = None
+        print("Generating embedding, and metadata...")
         self._generate_embeddings()  # initialize the embeddings, data, and labels
         self._create_metadata()
+        print("Completed generating embedding, and metadata")
         return
 
     def _generate_embeddings(self) -> None:
@@ -119,11 +121,20 @@ class EmbeddingHelper():
         visualize_embeddings(logdir=self.embeddings_dir, config=projector_config)
         saver.save(sess=None, global_step=None, save_path=ckpt_filename)
 
-    def tsne_plot(self, labels, colors, filename="tsne.png", show=False) -> None:
+    def tsne_plot(self, labels, colors, filename="tsne.png", show=False, n_components=2, perplexity=30.0,
+                  early_exaggeration=12.0, learning_rate=200.0, n_iter=1000, n_iter_without_progress=300,
+                  min_grad_norm=1e-07, metric='euclidean', init='random', verbose=0, random_state=None,
+                  method='barnes_hut', angle=0.5, n_jobs=None) -> None:
         if len(labels) != len(colors):
             raise ValueError("The list of labels and colours should be the same!")
         filename_abs = os.path.join(self.embeddings_dir, filename)
-        X_embedded = tsne(n_components=2).fit_transform(self.embeddings)
+        X_embedded = tsne(n_components=n_components, perplexity=perplexity, early_exaggeration=early_exaggeration,
+                          learning_rate=learning_rate, n_iter=n_iter,
+                          n_iter_without_progress=n_iter_without_progress, min_grad_norm=min_grad_norm, metric=metric,
+                          init=init,
+                          verbose=verbose, random_state=random_state, method=method, angle=angle,
+                          n_jobs=n_jobs).fit_transform(
+            self.embeddings)
         plt.figure(figsize=(6, 5))
 
         for i, label in enumerate(self.labels):

@@ -8,7 +8,8 @@ from tensorflow.keras import backend as K
 from tensorflow.keras.layers import Layer
 import os
 import argparse
-
+import logging
+logging.getLogger('tensorflow').disabled = True
 
 # custom layer used to make VAE
 class Sampling(Layer):
